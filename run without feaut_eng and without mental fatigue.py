@@ -1,4 +1,3 @@
-
 import warnings
 import matplotlib
 matplotlib.use("Agg")
@@ -9,10 +8,17 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
-def main():
 
+def main():
     import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import plotly.express as px
+
     df = pd.read_csv("enriched_employee_dataset.csv", sep=";")
+
+    # Remove Mental Fatigue Score completely from the dataset
+    df = df.drop(columns=["Mental Fatigue Score"])
 
     y = df["Burn Rate"]
     x = df.drop(columns=["Burn Rate"])
@@ -30,7 +36,6 @@ def main():
 
     print("\nMissing values in each column (full dataset):")
     print(df.isnull().sum())
-    # There are missing values in Resource Allocation, Mental Fatigue Score, and Burn Rate.
 
     # Missing values percentage
     print("\nPercentage of missing values in each column:")
@@ -49,22 +54,24 @@ def main():
     print("\nMissing summary (only columns with missing values):")
     print(missing_summary.to_string())
 
-    # Burnout Υ has 4.49%, that is 1,124 rows out of 22,750
-    # If we drop them, we still have ~21,600 rows
-
     # How many rows (observations) in X contain at least one missing value.
-    print("The number of employees that have at least 1 missing value is",
-          x.isnull().any(axis=1).sum())
-    ##3296 this is the 3.51%
+    print(
+        "The number of employees that have at least 1 missing value is",
+        x.isnull().any(axis=1).sum()
+    )
 
     # percentage of observations (rows) with at least one missing feature value
-    print("The percentage of rows contain missing values is ", round(
-        (x.isnull().any(axis=1).sum() / len(x)) * 100, 2), "%")
+    print(
+        "The percentage of rows contain missing values is",
+        round((x.isnull().any(axis=1).sum() / len(x)) * 100, 2),
+        "%"
+    )
 
-    # Τhe number of observations (rows) that contain more than one missing value across the feature set.
-    print("The number of employees that have more than one missing value is",
-          (x.isnull().sum(axis=1) > 1).sum())
-    # 202 means that is less than 1% of dataset
+    # The number of observations (rows) that contain more than one missing value across the feature set.
+    print(
+        "The number of employees that have more than one missing value is",
+        (x.isnull().sum(axis=1) > 1).sum()
+    )
 
     # Correlation Analysis of Missing Values
     cols_with_missing = x.columns[x.isnull().sum() > 0]
@@ -77,17 +84,12 @@ def main():
     else:
         print("\nNot enough columns with missing values to compute correlation.")
 
-    # Comments
-    # Shows no systematic co-occurrence of missing data across variables (0.046568)
-    # There is a LOW Missing CORRELATION BETWEEN THE VARIABLES THAT ARE MISSING TOGETHER
-    # That means that If an employee is missing Resource Allocation
-    # that does NOT strongly increase the probability that Mental Fatigue Score is also missing.
-
-    print(df.info())
-    print("\nData types of each column of the dataset are:", df.dtypes)
+    df.info()
+    print("\nData types of each column of the dataset are:")
+    print(df.dtypes)
 
     numerical_cols = x.select_dtypes(include=["int64", "float64"]).columns
-    categorical_cols = x.select_dtypes(include=["object", "bool"]).columns
+    categorical_cols = x.select_dtypes(include=["object", "string", "bool"]).columns
 
     print("Continuous (numerical) features:", numerical_cols.values)
     print()
@@ -98,27 +100,30 @@ def main():
     print()
     print(x[numerical_cols].describe().to_string())
 
-# Distribution and sweekness line for continuous
-    import numpy as np
-    import matplotlib.pyplot as plt
-
+    # Distribution and skewness line for continuous variables
     continuous_cols = [
         "Sleep Hours",
         "Work Hours per Week",
-        "Mental Fatigue Score",
         "Years in Company",
         "Team Size"
     ]
 
-    fig, ax = plt.subplots(1, 5, figsize=(20, 4))
+    fig, ax = plt.subplots(1, 4, figsize=(18, 4))
     ax = ax.flatten()
 
     for i, col in enumerate(continuous_cols):
-        s = x[col].dropna()  # x = DataFrame
+        s = x[col].dropna()
         mu, sigma = s.mean(), s.std()
 
-        ax[i].hist(s, bins=25, density=True, alpha=0.6,
-                   color="steelblue", edgecolor="white", linewidth=0.8)
+        ax[i].hist(
+            s,
+            bins=25,
+            density=True,
+            alpha=0.6,
+            color="steelblue",
+            edgecolor="white",
+            linewidth=0.8
+        )
 
         x_vals = np.linspace(s.min(), s.max(), 200)
         y_vals = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
@@ -133,9 +138,7 @@ def main():
 
     plt.tight_layout(pad=0.8)
     plt.savefig("Feature_hists_norm.pdf", dpi=300, bbox_inches="tight")
-    plt.subplots_adjust(wspace=0.25)
     plt.close()
-
 
     # Ordinal Distribution display
     ordinal_cols = [
@@ -172,17 +175,15 @@ def main():
     plt.close()
 
     # Boolean Variables Display
-    import plotly.express as px
-
     fig = px.pie(
         df,
         names="WFH Setup Available",
         title="WFH Setup Availability"
     )
-    fig.show()
+    fig.write_html("WFH_Setup_Availability.html")
 
     # Analysis of y Target
-    y = df["Burn Rate"]
+    y = df["Burn Rate"].dropna()
     print("The top of the Target: ", y.head())
     print()
     print(y.describe())
@@ -194,18 +195,17 @@ def main():
     mu = y.mean()
     sigma = y.std()
     x_vals = np.linspace(y.min(), y.max(), 300)
-    y_norm = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-((x_vals - mu) ** 2) / (2 * sigma ** 2))
+    y_norm = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
+        -((x_vals - mu) ** 2) / (2 * sigma ** 2)
+    )
     plt.plot(x_vals, y_norm, linewidth=2, color="darkred")
 
     plt.title("Distribution of Burn Rate", fontweight="bold")
     plt.xlabel("Burn Rate")
     plt.ylabel("Density")
     plt.tight_layout()
-    plt.show()
-
-    # Remove missing values from the target variable before thresholding,
-    # so that NaN observations are not incorrectly classified as 0 (Low Risk).
-    # The binary target is created only from valid Burn Rate values.
+    plt.savefig("Burn_Rate_distribution.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
 
     # Apply a Threshold
     print()
@@ -213,22 +213,24 @@ def main():
     threshold = 0.45
     y_binary = (y_clean >= threshold).astype(int)
     x_clean = x.loc[y_clean.index]
-    print("Threshold (mean Burn Rate):", threshold)
+
+    print("Threshold used:", threshold)
     print(y_binary.head(10))
 
     # How many are 0 and 1
-    print("After the threshold application, "
-          "the number of Low to Moderate burnout (zero) and"
-          " high burnout (one) is""\n",
-          y_binary.value_counts())
+    print(
+        "After the threshold application, "
+        "the number of Low to Moderate burnout (zero) and"
+        " high burnout (one) is\n",
+        y_binary.value_counts()
+    )
 
-    # Μising values in y after preprocessing
-    print("Μissing values in y after the threshold application:",
-          np.isnan(y).sum())
+    # Missing values in y after preprocessing
+    print("Missing values in y after the threshold application:", df["Burn Rate"].isna().sum())
 
     # Distribution of the target class
     class_counts = [np.sum(y_binary == 0), np.sum(y_binary == 1)]
-    class_labels = ['Low  Risk', 'High Risk']
+    class_labels = ['Low Risk', 'High Risk']
 
     plt.figure(figsize=(6, 4))
     bars = plt.bar(class_labels, class_counts, color=['purple', 'pink'], width=0.75)
@@ -259,14 +261,13 @@ def main():
     plt.close()
 
     # Portion of how many are 0 and 1
-    print("Portion of how many are 0 and 1:" "\n",
+    print("Portion of how many are 0 and 1:\n",
           y_binary.value_counts(normalize=True) * 100)
 
     # Box plots display
     boxplot_cols = [
         "Sleep Hours",
         "Work Hours per Week",
-        "Mental Fatigue Score",
         "Resource Allocation",
         "Work-Life Balance Score",
         "Manager Support Score",
@@ -336,7 +337,7 @@ def main():
     corr_pairs = upper_triangle.stack().reset_index()
     corr_pairs.columns = ["Feature 1", "Feature 2", "Correlation"]
 
-    # Strong Correlattion
+    # Strong Correlation
     strong_positive = corr_pairs[corr_pairs["Correlation"] > 0.7]
     print("Strong positive correlations (> 0.7):")
     print(strong_positive, "\n")
@@ -352,8 +353,7 @@ def main():
 
     df_fe["Work_Pressure"] = (
         df_fe["Work Hours per Week"] +
-        df_fe["Deadline Pressure Score"] +
-        df_fe["Mental Fatigue Score"]
+        df_fe["Deadline Pressure Score"]
     )
 
     df_fe["Well_Being"] = (
@@ -361,14 +361,6 @@ def main():
         df_fe["Work-Life Balance Score"] +
         df_fe["Sleep Hours"]
     )
-
-#Inspection of the relationship between Deadline Pressure x Manager Support########3
-
-
-
-
-
-
 
     ########## Preprocessing steps###
 
@@ -395,7 +387,7 @@ def main():
     numerical_cols = X.select_dtypes(include=["int64", "float64"]).columns
     categorical_cols = X.select_dtypes(include=["object", "string", "bool"]).columns
 
-#############preprocessing###################
+    ############# preprocessing ###################
     # Numerical: scaling only
     numerical_transformer = Pipeline(steps=[
         ("scaler", StandardScaler())
@@ -424,7 +416,7 @@ def main():
         remainder="drop"
     )
 
-################################################################33
+    ################################################################33
     # Model evaluation
 
     random_state = 50
@@ -491,9 +483,7 @@ def main():
             estimator=pipeline,
             param_grid=spec["params"],
             cv=inner_cv,
-            scoring="recall", ############################# # Recall is used as the optimization metric in GridSearchCV,
-                                 # since the primary objective is to minimize false negatives
-                                # and ensure high detection of high burnout risk employees.
+            scoring="recall",
             n_jobs=1
         )
 
@@ -521,7 +511,7 @@ def main():
         print(f"  Train Precision: {np.mean(cv_results['train_precision']):.3f} ± {np.std(cv_results['train_precision'], ddof=1):.3f}")
         print(f"  Train Recall:    {np.mean(cv_results['train_recall']):.3f} ± {np.std(cv_results['train_recall'], ddof=1):.3f}")
 
-############################# Best Model###############################333
+    ############################# Best Model ###############################
 
     # Best Model (based on Recall)
     best_model = max(results, key=lambda m: np.mean(results[m]["test_recall"]))
@@ -595,7 +585,6 @@ def main():
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig("Classifier_comparison_multimetric.pdf", dpi=300)
     plt.close()
-
 
 
     from sklearn.ensemble import BaggingClassifier
@@ -809,9 +798,7 @@ def main():
     plot_feature_importances_subplots(importance_dict, top_k=10)
 
 
-############################################################################3
 import numpy as np
-
 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
@@ -822,27 +809,30 @@ from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
 from sklearn.model_selection import (
-        StratifiedKFold,
-        RepeatedStratifiedKFold,
-        GridSearchCV,
-        cross_validate
-    )
+    StratifiedKFold,
+    RepeatedStratifiedKFold,
+    GridSearchCV,
+    cross_validate
+)
 
 
 def repeated_nested_cv():
     import pandas as pd
+
     # Load data
     df = pd.read_csv("enriched_employee_dataset.csv", sep=";")
 
+    # Remove Mental Fatigue Score completely
+    df = df.drop(columns=["Mental Fatigue Score"])
+
     # Preprocessing (dropna baseline)
 
-    ###########Feature engineering based on the Job Demands and Resources literature
+    ########### Feature engineering based on the Job Demands and Resources literature
     df_fe = df.copy()
 
     df_fe["Work_Pressure"] = (
         df_fe["Work Hours per Week"] +
-        df_fe["Deadline Pressure Score"] +
-        df_fe["Mental Fatigue Score"]
+        df_fe["Deadline Pressure Score"]
     )
 
     df_fe["Well_Being"] = (
@@ -914,11 +904,11 @@ def repeated_nested_cv():
         }
     }
 
-    # Repeated Nested CV hahahaha
+    # Repeated Nested CV
 
     outer_split_num = 5
     inner_split_num = 5
-    n_repeats = 50 ################3
+    n_repeats = 50
 
     outer_cv = RepeatedStratifiedKFold(
         n_splits=outer_split_num,

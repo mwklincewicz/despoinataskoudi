@@ -1,4 +1,3 @@
-
 import warnings
 import matplotlib
 matplotlib.use("Agg")
@@ -9,20 +8,38 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier
+from sklearn.model_selection import (
+    StratifiedKFold,
+    RepeatedStratifiedKFold,
+    GridSearchCV,
+    cross_validate
+)
+from xgboost import XGBClassifier
+
+
 def main():
-
-    import pandas as pd
+    # =========================
+    # Load dataset
+    # =========================
     df = pd.read_csv("enriched_employee_dataset.csv", sep=";")
-
-    y = df["Burn Rate"]
-    x = df.drop(columns=["Burn Rate"])
 
     print("\nThe shape of dataset is:", df.shape)
 
     print("\nThe names of the columns are:")
     print(df.columns)
 
-    # A check for duplicate observations just to see if we have unique registrations
+    # Check duplicates
     if df["Employee ID"].nunique() != len(df):
         print("Duplicate employee records detected.")
     else:
@@ -30,7 +47,6 @@ def main():
 
     print("\nMissing values in each column (full dataset):")
     print(df.isnull().sum())
-    # There are missing values in Resource Allocation, Mental Fatigue Score, and Burn Rate.
 
     # Missing values percentage
     print("\nPercentage of missing values in each column:")
@@ -49,76 +65,76 @@ def main():
     print("\nMissing summary (only columns with missing values):")
     print(missing_summary.to_string())
 
-    # Burnout Υ has 4.49%, that is 1,124 rows out of 22,750
-    # If we drop them, we still have ~21,600 rows
+    # X for EDA only (drop target)
+    x = df.drop(columns=["Burn Rate"])
 
-    # How many rows (observations) in X contain at least one missing value.
-    print("The number of employees that have at least 1 missing value is",
-          x.isnull().any(axis=1).sum())
-    ##3296 this is the 3.51%
+    print(
+        "The number of employees that have at least 1 missing value is",
+        x.isnull().any(axis=1).sum()
+    )
 
-    # percentage of observations (rows) with at least one missing feature value
-    print("The percentage of rows contain missing values is ", round(
-        (x.isnull().any(axis=1).sum() / len(x)) * 100, 2), "%")
+    print(
+        "The percentage of rows contain missing values is",
+        round((x.isnull().any(axis=1).sum() / len(x)) * 100, 2),
+        "%"
+    )
 
-    # Τhe number of observations (rows) that contain more than one missing value across the feature set.
-    print("The number of employees that have more than one missing value is",
-          (x.isnull().sum(axis=1) > 1).sum())
-    # 202 means that is less than 1% of dataset
+    print(
+        "The number of employees that have more than one missing value is",
+        (x.isnull().sum(axis=1) > 1).sum()
+    )
 
-    # Correlation Analysis of Missing Values
+    # Correlation of missingness
     cols_with_missing = x.columns[x.isnull().sum() > 0]
 
     if len(cols_with_missing) > 1:
         missing_corr = x[cols_with_missing].isnull().corr()
-
         print("\nCorrelation matrix of missing values:")
         print(missing_corr)
     else:
         print("\nNot enough columns with missing values to compute correlation.")
 
-    # Comments
-    # Shows no systematic co-occurrence of missing data across variables (0.046568)
-    # There is a LOW Missing CORRELATION BETWEEN THE VARIABLES THAT ARE MISSING TOGETHER
-    # That means that If an employee is missing Resource Allocation
-    # that does NOT strongly increase the probability that Mental Fatigue Score is also missing.
-
-    print(df.info())
-    print("\nData types of each column of the dataset are:", df.dtypes)
+    df.info()
+    print("\nData types of each column of the dataset are:")
+    print(df.dtypes)
 
     numerical_cols = x.select_dtypes(include=["int64", "float64"]).columns
-    categorical_cols = x.select_dtypes(include=["object", "bool"]).columns
+    categorical_cols = x.select_dtypes(include=["object", "string", "bool"]).columns
 
-    print("Continuous (numerical) features:", numerical_cols.values)
+    print("\nContinuous (numerical) features:", numerical_cols.values)
     print()
     print("Categorical features:", categorical_cols.values)
 
-    # Statistics for numerical columns
-    print("\nSummary statistics for numerical columns:")
-    print()
+    print("\nSummary statistics for numerical columns:\n")
     print(x[numerical_cols].describe().to_string())
 
-# Distribution and sweekness line for continuous
-    import numpy as np
-    import matplotlib.pyplot as plt
+    # =========================
+    # EDA plots
+    # =========================
 
     continuous_cols = [
         "Sleep Hours",
         "Work Hours per Week",
-        "Mental Fatigue Score",
         "Years in Company",
         "Team Size"
     ]
 
-    fig, ax = plt.subplots(1, 5, figsize=(20, 4))
+    fig, ax = plt.subplots(1, 4, figsize=(18, 4))
     ax = ax.flatten()
 
     for i, col in enumerate(continuous_cols):
-        s = x[col].dropna()  # x = DataFrame
+        s = x[col].dropna()
         mu, sigma = s.mean(), s.std()
 
-        ax[i].hist(s, bins=25, density=True, alpha=0.6,
-                   color="steelblue", edgecolor="white", linewidth=0.8)
+        ax[i].hist(
+            s,
+            bins=25,
+            density=True,
+            alpha=0.6,
+            color="steelblue",
+            edgecolor="white",
+            linewidth=0.8
+        )
 
         x_vals = np.linspace(s.min(), s.max(), 200)
         y_vals = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
@@ -126,18 +142,14 @@ def main():
         )
 
         ax[i].plot(x_vals, y_vals, linewidth=2, color="darkred")
-
         ax[i].set_title(col, fontsize=10)
         ax[i].set_xlabel(col, fontsize=9)
         ax[i].set_ylabel("Density", fontsize=9)
 
     plt.tight_layout(pad=0.8)
     plt.savefig("Feature_hists_norm.pdf", dpi=300, bbox_inches="tight")
-    plt.subplots_adjust(wspace=0.25)
     plt.close()
 
-
-    # Ordinal Distribution display
     ordinal_cols = [
         "Designation",
         "Resource Allocation",
@@ -171,72 +183,78 @@ def main():
     plt.savefig("Ordinal_barplots.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
-    # Boolean Variables Display
-    import plotly.express as px
-
+    # Boolean/categorical visualization
     fig = px.pie(
         df,
         names="WFH Setup Available",
         title="WFH Setup Availability"
     )
-    fig.show()
+    fig.write_html("WFH_Setup_Availability.html")
 
-    # Analysis of y Target
+    # =========================
+    # Target analysis
+    # =========================
     y = df["Burn Rate"]
-    print("The top of the Target: ", y.head())
+    y_clean = y.dropna()
+
+    print("\nThe top of the Target:")
+    print(y_clean.head())
     print()
-    print(y.describe())
+    print(y_clean.describe())
 
-    # Distribution of Burn Rate display
     plt.figure(figsize=(6, 4))
-    plt.hist(y, bins=25, density=True, alpha=0.6, edgecolor="black", linewidth=0.8)
+    plt.hist(
+        y_clean,
+        bins=25,
+        density=True,
+        alpha=0.6,
+        edgecolor="black",
+        linewidth=0.8
+    )
 
-    mu = y.mean()
-    sigma = y.std()
-    x_vals = np.linspace(y.min(), y.max(), 300)
-    y_norm = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-((x_vals - mu) ** 2) / (2 * sigma ** 2))
+    mu = y_clean.mean()
+    sigma = y_clean.std()
+    x_vals = np.linspace(y_clean.min(), y_clean.max(), 300)
+    y_norm = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
+        -((x_vals - mu) ** 2) / (2 * sigma ** 2)
+    )
     plt.plot(x_vals, y_norm, linewidth=2, color="darkred")
 
     plt.title("Distribution of Burn Rate", fontweight="bold")
     plt.xlabel("Burn Rate")
     plt.ylabel("Density")
     plt.tight_layout()
-    plt.show()
+    plt.savefig("Burn_Rate_distribution.pdf", dpi=300, bbox_inches="tight")
+    plt.close()
 
-    # Remove missing values from the target variable before thresholding,
-    # so that NaN observations are not incorrectly classified as 0 (Low Risk).
-    # The binary target is created only from valid Burn Rate values.
+    mean_burn_rate = y_clean.mean()
+    threshold = round(mean_burn_rate, 2)
 
-    # Apply a Threshold
-    print()
-    y_clean = df["Burn Rate"].dropna()
-    threshold = 0.45
     y_binary = (y_clean >= threshold).astype(int)
     x_clean = x.loc[y_clean.index]
-    print("Threshold (mean Burn Rate):", threshold)
+
+    print(f"\nMean Burn Rate: {mean_burn_rate:.6f}")
+    print(f"Threshold used after rounding: {threshold:.2f}")
     print(y_binary.head(10))
 
-    # How many are 0 and 1
-    print("After the threshold application, "
-          "the number of Low to Moderate burnout (zero) and"
-          " high burnout (one) is""\n",
-          y_binary.value_counts())
+    print(
+        "After the threshold application, the number of Low to Moderate burnout (0) "
+        "and High burnout (1) is:\n",
+        y_binary.value_counts()
+    )
 
-    # Μising values in y after preprocessing
-    print("Μissing values in y after the threshold application:",
-          np.isnan(y).sum())
+    print("Missing values in y after thresholding:", y.isna().sum())
 
-    # Distribution of the target class
     class_counts = [np.sum(y_binary == 0), np.sum(y_binary == 1)]
-    class_labels = ['Low  Risk', 'High Risk']
+    class_labels = ["Low Risk", "High Risk"]
 
     plt.figure(figsize=(6, 4))
-    bars = plt.bar(class_labels, class_counts, color=['purple', 'pink'], width=0.75)
-    plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7, axis='y')
+    bars = plt.bar(class_labels, class_counts, color=["purple", "pink"], width=0.75)
+    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.7, axis="y")
 
-    plt.title('Distribution of Target Classes', fontsize=16, fontweight='bold')
-    plt.xlabel('Classes', fontsize=14)
-    plt.ylabel('Count', fontsize=14)
+    plt.title("Distribution of Target Classes", fontsize=16, fontweight="bold")
+    plt.xlabel("Classes", fontsize=14)
+    plt.ylabel("Count", fontsize=14)
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
 
@@ -246,27 +264,24 @@ def main():
             bar.get_x() + bar.get_width() / 2,
             yval + 20,
             f"{int(yval)}",
-            ha='center',
-            va='bottom',
-            fontweight='bold',
+            ha="center",
+            va="bottom",
+            fontweight="bold",
             fontsize=12
         )
+
     for spine in plt.gca().spines.values():
         spine.set_visible(False)
 
     plt.tight_layout()
-    plt.savefig('Class_dist_barplot.pdf', dpi=300)
+    plt.savefig("Class_dist_barplot.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
-    # Portion of how many are 0 and 1
-    print("Portion of how many are 0 and 1:" "\n",
-          y_binary.value_counts(normalize=True) * 100)
+    print("Portion of how many are 0 and 1:\n", y_binary.value_counts(normalize=True) * 100)
 
-    # Box plots display
     boxplot_cols = [
         "Sleep Hours",
         "Work Hours per Week",
-        "Mental Fatigue Score",
         "Resource Allocation",
         "Work-Life Balance Score",
         "Manager Support Score",
@@ -306,7 +321,7 @@ def main():
     plt.savefig('Employee_Feature_Boxplots.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Only numerical FEATURES (exclude target)
+    # Correlation heatmap before modeling
     numerical_cols = x.select_dtypes(include=["int64", "float64"]).columns
     correlation_matrix = x[numerical_cols].corr()
 
@@ -326,34 +341,41 @@ def main():
             )
 
     plt.tight_layout()
-    plt.savefig('Correlation_heatmap_before.pdf', dpi=300)
+    plt.savefig('Correlation_heatmap_before.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Correlation of Numericals
     corr = x[numerical_cols].corr()
     upper_triangle = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
 
     corr_pairs = upper_triangle.stack().reset_index()
     corr_pairs.columns = ["Feature 1", "Feature 2", "Correlation"]
 
-    # Strong Correlattion
     strong_positive = corr_pairs[corr_pairs["Correlation"] > 0.7]
-    print("Strong positive correlations (> 0.7):")
+    print("\nStrong positive correlations (> 0.7):")
     print(strong_positive, "\n")
 
-    # Strong Negative
     strong_negative = corr_pairs[corr_pairs["Correlation"] < -0.7]
     print("Strong negative correlations (< -0.7):")
     print(strong_negative)
 
-    ###### Feature Engineering based on the Job Demands–Resources model
+    # =========================
+    # Feature engineering
+    # =========================
+    # IMPORTANT:
+    # 1. Mental Fatigue Score is completely removed
+    # 2. Engineered features are kept
+    # 3. Original variables used to create engineered features
+    #    are removed from the final model to avoid double counting
 
     df_fe = df.copy()
 
+    # Remove Mental Fatigue Score completely
+    df_fe = df_fe.drop(columns=["Mental Fatigue Score"])
+
+    # Engineered features WITHOUT mental fatigue
     df_fe["Work_Pressure"] = (
         df_fe["Work Hours per Week"] +
-        df_fe["Deadline Pressure Score"] +
-        df_fe["Mental Fatigue Score"]
+        df_fe["Deadline Pressure Score"]
     )
 
     df_fe["Well_Being"] = (
@@ -362,51 +384,43 @@ def main():
         df_fe["Sleep Hours"]
     )
 
-#Inspection of the relationship between Deadline Pressure x Manager Support########3
-
-
-
-
-
-
-
-    ########## Preprocessing steps###
-
-    from sklearn.compose import ColumnTransformer
-    from sklearn.preprocessing import OneHotEncoder, StandardScaler
-    from sklearn.pipeline import Pipeline
-
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_validate
-    from xgboost import XGBClassifier
-
-    # Use of feature-engineered dataframe df_fe
-    threshold = 0.45
-
+    # =========================
+    # Preprocessing + Modeling
+    # =========================
     df_model = df_fe.drop(columns=["Employee ID", "Date of Joining"]).copy()
+
+    # Drop rows with missing values
     df_model = df_model.dropna().copy()
 
+    # Threshold from non-missing target
+    threshold = round(df_model["Burn Rate"].mean(), 2)
     df_model["Burn_Rate_Binary"] = (df_model["Burn Rate"] >= threshold).astype(int)
 
-    X = df_model.drop(columns=["Burn Rate", "Burn_Rate_Binary"])
+    # Final X
+    X = df_model.drop(columns=["Burn Rate", "Burn_Rate_Binary"]).copy()
     y = df_model["Burn_Rate_Binary"]
+
+    # Remove original variables used inside engineered features
+    # to avoid double counting
+    X = X.drop(columns=[
+        "Work Hours per Week",
+        "Deadline Pressure Score",
+        "Recognition Frequency",
+        "Work-Life Balance Score",
+        "Sleep Hours"
+    ])
 
     numerical_cols = X.select_dtypes(include=["int64", "float64"]).columns
     categorical_cols = X.select_dtypes(include=["object", "string", "bool"]).columns
 
-#############preprocessing###################
-    # Numerical: scaling only
     numerical_transformer = Pipeline(steps=[
         ("scaler", StandardScaler())
     ])
 
-    # Categorical: one-hot only
     categorical_transformer = Pipeline(steps=[
         ("onehot", OneHotEncoder(handle_unknown="ignore"))
     ])
 
-    # Preprocessor for non-tree models
     preprocessor_non_tree = ColumnTransformer(
         transformers=[
             ("num", numerical_transformer, numerical_cols),
@@ -415,7 +429,6 @@ def main():
         remainder="drop"
     )
 
-    # Preprocessor for tree-based models
     preprocessor_tree = ColumnTransformer(
         transformers=[
             ("num", "passthrough", numerical_cols),
@@ -423,9 +436,6 @@ def main():
         ],
         remainder="drop"
     )
-
-################################################################33
-    # Model evaluation
 
     random_state = 50
     outer_split_num = 5
@@ -473,7 +483,6 @@ def main():
     results = {}
 
     for name, spec in models.items():
-
         print(f"\nRunning model: {name}")
 
         if name in ["Random Forest", "XGBoost"]:
@@ -491,9 +500,7 @@ def main():
             estimator=pipeline,
             param_grid=spec["params"],
             cv=inner_cv,
-            scoring="recall", ############################# # Recall is used as the optimization metric in GridSearchCV,
-                                 # since the primary objective is to minimize false negatives
-                                # and ensure high detection of high burnout risk employees.
+            scoring="recall",
             n_jobs=1
         )
 
@@ -521,9 +528,9 @@ def main():
         print(f"  Train Precision: {np.mean(cv_results['train_precision']):.3f} ± {np.std(cv_results['train_precision'], ddof=1):.3f}")
         print(f"  Train Recall:    {np.mean(cv_results['train_recall']):.3f} ± {np.std(cv_results['train_recall'], ddof=1):.3f}")
 
-############################# Best Model###############################333
-
-    # Best Model (based on Recall)
+    # =========================
+    # Best model
+    # =========================
     best_model = max(results, key=lambda m: np.mean(results[m]["test_recall"]))
     best_params = [est.best_params_ for est in results[best_model]["estimator"]]
 
@@ -531,7 +538,9 @@ def main():
     for i, params in enumerate(best_params, 1):
         print(f"  Fold {i}: {params}")
 
-    # Comparison of Classifier Performance
+    # =========================
+    # Model comparison plot
+    # =========================
     models_list = ["Logistic Regression", "Random Forest", "XGBoost"]
     metrics = {
         "F1-score": "test_f1",
@@ -555,7 +564,6 @@ def main():
     axes = axes.flatten()
 
     for ax, (metric_name, _) in zip(axes, metrics.items()):
-
         bars = ax.bar(
             models_list,
             means[metric_name],
@@ -566,7 +574,7 @@ def main():
         )
 
         ax.set_title(metric_name, fontsize=14, fontweight="bold")
-        ax.set_ylim(0.5, max(means[metric_name]) + 0.1)
+        ax.set_ylim(0.0, max(means[metric_name]) + 0.1)
         ax.grid(axis="y", linestyle="--", alpha=0.6)
 
         ax.tick_params(axis="x", labelrotation=25)
@@ -578,7 +586,7 @@ def main():
         for bar, mean_val in zip(bars, means[metric_name]):
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
-                mean_val - 0.1,
+                mean_val - 0.05,
                 f"{mean_val:.3f}",
                 ha="center",
                 va="bottom",
@@ -593,28 +601,19 @@ def main():
     )
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig("Classifier_comparison_multimetric.pdf", dpi=300)
+    plt.savefig("Classifier_comparison_multimetric.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
-
-
-    from sklearn.ensemble import BaggingClassifier
-
-    ################# LOGISTIC REGRESSION ROBUST FEATURE IMPORTANCE ##################
-
-    # Use the same preprocessor structure as Logistic Regression
+    # =========================
+    # Logistic Regression robust feature importance
+    # =========================
     X_lr = X.copy()
     y_lr = y.copy()
 
-    # Fit the non-tree preprocessor on the full final dataset
     X_lr_transformed = preprocessor_non_tree.fit_transform(X_lr, y_lr)
-
-    # Get transformed feature names
     lr_feature_names = preprocessor_non_tree.get_feature_names_out()
 
-    # Bagging Logistic Regression
     n_estimators = 100
-
     bagged_model = BaggingClassifier(
         estimator=LogisticRegression(random_state=random_state, max_iter=1000),
         n_estimators=n_estimators,
@@ -623,30 +622,28 @@ def main():
 
     bagged_model.fit(X_lr_transformed, y_lr)
 
-    # Collect coefficients from all bagged estimators
     coefficients = []
     for est in bagged_model.estimators_:
         coefficients.append(est.coef_.ravel())
 
     coefficients = np.vstack(coefficients)
 
-    # Robust feature importance = mean coefficient / standard error
-    feature_importance = np.mean(coefficients, axis=0) / (
-        np.std(coefficients, axis=0, ddof=1) / np.sqrt(n_estimators)
-    )
+    coef_mean = np.mean(coefficients, axis=0)
+    coef_std = np.std(coefficients, axis=0, ddof=1)
+    coef_se = coef_std / np.sqrt(n_estimators)
+    coef_se[coef_se == 0] = np.nan
 
-    # Create DataFrame
+    feature_importance = coef_mean / coef_se
+
     lr_fi_df = pd.DataFrame({
         "feature": lr_feature_names,
         "importance": feature_importance
     })
 
-    # Sort by absolute importance
     lr_fi_df = lr_fi_df.reindex(
         lr_fi_df["importance"].abs().sort_values(ascending=False).index
     )
 
-    # Plot top features
     top_k = 15
     lr_plot_df = lr_fi_df.head(top_k).iloc[::-1]
 
@@ -662,38 +659,28 @@ def main():
     plt.savefig("Logistic_bagging_feature_importance.pdf", dpi=300, bbox_inches="tight")
     plt.close()
 
-    # Print top features
     print("\nTop Logistic Regression features (bagging-based importance):")
     print(lr_fi_df.head(15).to_string(index=False))
 
-    ################# LOGISTIC REGRESSION ODDS RATIOS ##################
+    # Odds ratios
+    odds_ratios = np.exp(coef_mean)
 
-    mean_coef = np.mean(coefficients, axis=0)
-    odds_ratios = np.exp(mean_coef)
-
-    # Create dataframe
     odds_df = pd.DataFrame({
         "Feature": lr_feature_names,
         "odds_ratios": odds_ratios
     })
 
-    # Sort by strength of effect (distance from OR=1)
     odds_df["effect_strength"] = np.abs(np.log(odds_df["odds_ratios"]))
     odds_df = odds_df.sort_values("effect_strength", ascending=False)
 
-    # Plot
     plt.figure(figsize=(10, 6))
     plt.bar(odds_df["Feature"], odds_df["odds_ratios"])
-    plt.axhline(1, linestyle="--", color="red")  # No-effect line
-
+    plt.axhline(1, linestyle="--", color="red")
     plt.xticks(rotation=45, ha="right")
     plt.xlabel("Feature")
     plt.ylabel("Odds Ratio")
     plt.title("Odds Ratios in Logistic Regression")
-
-    # Log scale is more appropriate for odds ratios
     plt.yscale("log")
-
     plt.tight_layout()
     plt.savefig("Logistic_odds_ratios.pdf", dpi=300, bbox_inches="tight")
     plt.close()
@@ -701,12 +688,13 @@ def main():
     print("\nTop Logistic Regression features by odds ratio effect strength:")
     print(odds_df.head(15).to_string(index=False))
 
-    ################# GLOBAL FEATURE IMPORTANCE FOR TREE MODELS ##################
-
+    # =========================
+    # Tree model importances
+    # =========================
     def get_transformed_feature_names(preprocessor):
         return preprocessor.get_feature_names_out()
 
-    def collapse_onehot_mean(df_imp, original_columns):
+    def collapse_onehot_sum(df_imp, original_columns):
         df_imp = df_imp.copy()
         df_imp["feature_clean"] = df_imp["feature"].str.replace(r"^(num__|cat__)", "", regex=True)
 
@@ -718,7 +706,7 @@ def main():
 
         df_imp["base_feature"] = df_imp["feature_clean"].apply(get_base_feature)
 
-        return df_imp.groupby("base_feature")["importance"].mean()
+        return df_imp.groupby("base_feature")["importance"].sum()
 
     def rf_importance(pipe):
         rf = pipe.named_steps["model"]
@@ -744,7 +732,7 @@ def main():
         for grid in results_dict[model_name]["estimator"]:
             pipe = grid.best_estimator_
             df_imp = importance_fn(pipe)
-            collapsed = collapse_onehot_mean(df_imp, original_columns)
+            collapsed = collapse_onehot_sum(df_imp, original_columns)
             fold_importances.append(collapsed)
 
         return fold_importances
@@ -791,7 +779,7 @@ def main():
         )
 
         plt.tight_layout(rect=[0, 0, 1, 0.93])
-        plt.savefig("Tree_model_feature_importances_subplots.pdf", dpi=300)
+        plt.savefig("Tree_model_feature_importances_subplots.pdf", dpi=300, bbox_inches="tight")
         plt.close()
 
     rf_fold_importances = importance_across_folds(
@@ -809,40 +797,16 @@ def main():
     plot_feature_importances_subplots(importance_dict, top_k=10)
 
 
-############################################################################3
-import numpy as np
-
-
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-
-from sklearn.model_selection import (
-        StratifiedKFold,
-        RepeatedStratifiedKFold,
-        GridSearchCV,
-        cross_validate
-    )
-
-
 def repeated_nested_cv():
-    import pandas as pd
-    # Load data
     df = pd.read_csv("enriched_employee_dataset.csv", sep=";")
 
-    # Preprocessing (dropna baseline)
+    # Remove Mental Fatigue Score completely
+    df_fe = df.drop(columns=["Mental Fatigue Score"]).copy()
 
-    ###########Feature engineering based on the Job Demands and Resources literature
-    df_fe = df.copy()
-
+    # Feature engineering without double counting of mental fatigue
     df_fe["Work_Pressure"] = (
         df_fe["Work Hours per Week"] +
-        df_fe["Deadline Pressure Score"] +
-        df_fe["Mental Fatigue Score"]
+        df_fe["Deadline Pressure Score"]
     )
 
     df_fe["Well_Being"] = (
@@ -851,12 +815,23 @@ def repeated_nested_cv():
         df_fe["Sleep Hours"]
     )
 
-    df_model = df_fe.drop(columns=["Employee ID", "Date of Joining"])
-    df_model = df_model.dropna()
+    df_model = df_fe.drop(columns=["Employee ID", "Date of Joining"]).copy()
+    df_model = df_model.dropna().copy()
 
-    X = df_model.drop(columns=["Burn Rate"])
-    threshold = 0.45
-    y = (df_model["Burn Rate"] >= threshold).astype(int)
+    threshold = round(df_model["Burn Rate"].mean(), 2)
+    df_model["Burn_Rate_Binary"] = (df_model["Burn Rate"] >= threshold).astype(int)
+
+    X = df_model.drop(columns=["Burn Rate", "Burn_Rate_Binary"]).copy()
+    y = df_model["Burn_Rate_Binary"]
+
+    # Remove original variables included in engineered variables
+    X = X.drop(columns=[
+        "Work Hours per Week",
+        "Deadline Pressure Score",
+        "Recognition Frequency",
+        "Work-Life Balance Score",
+        "Sleep Hours"
+    ])
 
     numerical_cols = X.select_dtypes(include=["int64", "float64"]).columns
     categorical_cols = X.select_dtypes(include=["object", "string", "bool"]).columns
@@ -885,8 +860,6 @@ def repeated_nested_cv():
         remainder="drop"
     )
 
-    # Models + grids
-
     random_state = 50
 
     models = {
@@ -914,11 +887,9 @@ def repeated_nested_cv():
         }
     }
 
-    # Repeated Nested CV hahahaha
-
     outer_split_num = 5
     inner_split_num = 5
-    n_repeats = 50 ################3
+    n_repeats = 10
 
     outer_cv = RepeatedStratifiedKFold(
         n_splits=outer_split_num,
@@ -960,7 +931,7 @@ def repeated_nested_cv():
             y=y,
             cv=outer_cv,
             scoring=["f1", "roc_auc", "precision", "recall"],
-            return_estimator=True,
+            return_estimator=False,
             n_jobs=1
         )
 
@@ -973,8 +944,6 @@ def repeated_nested_cv():
         print(f"  Precision: {np.mean(cv_results['test_precision']):.3f} ± {np.std(cv_results['test_precision'], ddof=1):.3f} (n={n_outer})")
         print(f"  Recall:    {np.mean(cv_results['test_recall']):.3f} ± {np.std(cv_results['test_recall'], ddof=1):.3f} (n={n_outer})")
 
-
-print()
 
 if __name__ == "__main__":
     main()
